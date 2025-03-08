@@ -1,7 +1,15 @@
+transformers
 easyocr
 numpy
 opencv-python
 Flask
-transformers
 happytransformer
+accelerate
 torch
+Werkzeug
+pillow
+matplotlib
+pandas
+datasets
+scikit-learn
+python-docx
