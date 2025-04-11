@@ -15,6 +15,6 @@ def create_app():
 
     app.register_blueprint(summary_bp)
     app.register_blueprint(grammar_bp)
-    app.register_blueprint(ocr_bp, url_prefix='/ocr')
+    app.register_blueprint(ocr_bp)
 
     return app

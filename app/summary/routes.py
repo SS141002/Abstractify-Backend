@@ -87,7 +87,7 @@ def handle_summary():
         abort(400, description="No text content extracted from the input")
 
     try:
-        inputs = tokenizer(long_text, max_length=4096, return_tensors="pt", truncation=True)
+        inputs = tokenizer(long_text, max_length=1024, return_tensors="pt", truncation=True)
         inputs = {key: value.to(device) for key, value in inputs.items()}
 
         summary_ids = model.generate(
