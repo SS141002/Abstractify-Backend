@@ -16,3 +16,4 @@ tqdm~=4.66.6
 datasets~=2.21.0
 torchmetrics~=1.7.0
 torchvision~=0.20.1+cu124
+Flask-SocketIO~=5.5.1

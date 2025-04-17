@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request, abort
-from .models import trocr_processor, trocr_model
+from app.socketio_instance import socketio
+from .models import trocr_processor, trocr_model, device
 from .segmenters import get_segmenter
 from app.utils.image_processing import read_image
 import easyocr
@@ -19,6 +20,10 @@ def handle_ocr():
     if not files or len(files) == 0:
         abort(400, description="No images uploaded")
 
+    total_files = len(files)
+    current_file = 0
+    socketio.emit("ocr_progress", {"current_file": None, "status": "files received", "progress": 0})
+
     for field in ['ocrMode', 'segmentMode', 'pageType']:
         if field not in request.form:
             abort(400, description=f'no {field} part in request')
@@ -32,7 +37,6 @@ def handle_ocr():
             abort(400, description='No languages provided')
         languages = json.loads(request.form['languages'])
         try:
-            print("typed")
             results = {}
             reader = easyocr.Reader(lang_list=languages, gpu=True, model_storage_directory="./models/easyocr/")
             for file in files:
@@ -43,6 +47,10 @@ def handle_ocr():
                 for i in result:
                     file_text += i[1] + " "
                 results[filename] = file_text.strip()  # trim trailing space
+                current_file += 1
+                socketio.emit("ocr_progress",
+                              {"current_file": None, "status": f"processing files {current_file}/{total_files}",
+                               "progress": int((current_file / total_files) * 100)})
             return jsonify(results), 200
         except Exception as e:
             abort(500, description=str(e))
@@ -63,18 +71,25 @@ def handle_ocr():
             }
             segmenter = get_segmenter(segment_mode, page_type)
             results = {}
+            fname = ""
             for file in files:
                 filename = file.filename
+                fname = filename
                 image = read_image(file)
                 segments = segmenter.crop(image, config)
                 full_text = ""
                 for segment in segments:
                     pixel_values = trocr_processor(images=segment, return_tensors="pt").pixel_values
+                    pixel_values = pixel_values.to(device)
                     generated_ids = trocr_model.generate(pixel_values)
                     generated_text = trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
                     full_text += generated_text + "\n"
                 results[filename] = full_text.strip()
+                current_file += 1
+                socketio.emit("ocr_progress",
+                              {"current_file": None, "status": f"processing files {current_file}/{total_files}",
+                               "progress": int((current_file / total_files) * 100)})
             return jsonify(results), 200
         except Exception as e:
             print(e)
-            abort(500, description=str(e))
+            abort(500, description=str(e) + fname)
