@@ -41,6 +41,7 @@ def handle_ocr():
             reader = easyocr.Reader(lang_list=languages, gpu=True, model_storage_directory="./models/easyocr/")
             for file in files:
                 filename = file.filename
+                print(filename)
                 image = read_image(file)
                 result = reader.readtext(image=image)
                 file_text = ""
@@ -76,16 +77,22 @@ def handle_ocr():
                 filename = file.filename
                 fname = filename
                 image = read_image(file)
-                segments = segmenter.crop(image, config)
                 full_text = ""
-                for segment in segments:
-                    pixel_values = trocr_processor(images=segment, return_tensors="pt").pixel_values
-                    pixel_values = pixel_values.to(device)
-                    generated_ids = trocr_model.generate(pixel_values)
-                    generated_text = trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-                    full_text += generated_text + "\n"
-                results[filename] = full_text.strip()
-                current_file += 1
+                try:
+                    segments = segmenter.crop(image, config)
+                    for segment in segments:
+                        pixel_values = trocr_processor(images=segment, return_tensors="pt").pixel_values
+                        pixel_values = pixel_values.to(device)
+                        generated_ids = trocr_model.generate(pixel_values)
+                        generated_text = trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+                        full_text += generated_text + "\n"
+                except Exception as e:
+                    print(f"Error processing segment: {e}")
+                    full_text = "Unable to Process the image"
+                    # Handle the error as needed, e.g., log it or skip the segment
+                finally:
+                    results[filename] = full_text.strip()
+                    current_file += 1
                 socketio.emit("ocr_progress",
                               {"current_file": None, "status": f"processing files {current_file}/{total_files}",
                                "progress": int((current_file / total_files) * 100)})
