@@ -1,7 +1,5 @@
-from accelerate.commands.config.config import description
 from flask import Blueprint, jsonify, request, abort
 from .models import *
-from app.utils.text_processing import clean_text
 
 grammar_bp = Blueprint('grammar', __name__)
 
@@ -16,7 +14,11 @@ def handle_grammar():
     long_text = data['text']
 
     try:
-        result = happy_tt.generate_text("grammar : " + long_text, args=args)
-        return jsonify({'text': clean_text(result.text)})
+        input_text = "Fix grammatical errors in this text: " + long_text
+        input_ids = gram_tokenizer(input_text, return_tensors="pt").input_ids.to(device)
+        output = gram_model.generate(input_ids, max_length=1024)
+        result = gram_tokenizer.decode(output[0], skip_special_tokens=True)
+        return jsonify({'text': result})
     except Exception as e:
+        print(e)
         abort(500, description=str(e))

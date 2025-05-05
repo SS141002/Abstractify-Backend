@@ -80,22 +80,25 @@ def handle_ocr():
                 full_text = ""
                 try:
                     segments = segmenter.crop(image, config)
+                    socketio.emit("ocr_progress",
+                                  {"current_file": None, "status": f"segmenting image {current_file}/{total_files}",
+                                   "progress": int((current_file / total_files) * 100)})
                     for segment in segments:
                         pixel_values = trocr_processor(images=segment, return_tensors="pt").pixel_values
                         pixel_values = pixel_values.to(device)
                         generated_ids = trocr_model.generate(pixel_values)
                         generated_text = trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
                         full_text += generated_text + "\n"
-                except Exception as e:
-                    print(f"Error processing segment: {e}")
-                    full_text = "Unable to Process the image"
-                    # Handle the error as needed, e.g., log it or skip the segment
-                finally:
                     results[filename] = full_text.strip()
                     current_file += 1
-                socketio.emit("ocr_progress",
-                              {"current_file": None, "status": f"processing files {current_file}/{total_files}",
-                               "progress": int((current_file / total_files) * 100)})
+                    socketio.emit("ocr_progress",
+                                  {"current_file": None, "status": f"processing image {current_file}/{total_files}",
+                                   "progress": int((current_file / total_files) * 100)})
+
+                except Exception as e:
+                    print(f"Error processing segment: {e}")
+                    results[filename] = "Unable to Process the image"
+
             return jsonify(results), 200
         except Exception as e:
             print(e)

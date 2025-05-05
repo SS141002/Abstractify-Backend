@@ -1,9 +1,7 @@
 import cv2
 import numpy as np
-import torch
-import tempfile
-import os
-from craft_text_detector import Craft
+from paddleocr import PaddleOCR
+import matplotlib.pyplot as plt
 
 
 class Segmenter:
@@ -59,35 +57,99 @@ class ManualRuledSegmenter(Segmenter):
 
 class AutoPlainSegmenter(Segmenter):
     def __init__(self):
-        self.craft = Craft(crop_type="box", cuda=torch.cuda.is_available())
+        self.ocr = PaddleOCR(use_angle_cls=True, lang='en',
+                             det=True, rec=False,
+                             det_db_box_thresh=0.2,
+                             det_db_unclip_ratio=3.5,
+                             det_box_type='poly',
+                             use_gpu=True,
+                             use_dilation=True,
+                             det_db_score_mode='slow'
+                             )
+
+    @staticmethod
+    def crop_poly(img, box, expand_pixels=0):
+        # Create an empty black mask
+        mask = np.zeros(img.shape[:2], dtype=np.uint8)
+
+        # Draw the polygon on the mask
+        pts = np.array([box], dtype=np.int32)
+        cv2.fillPoly(mask, pts, 255)
+
+        # --- ✨ DILATE the mask to expand the polygon ✨ ---
+        kernel_size = expand_pixels * 2 + 1  # Make sure kernel is odd
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+        expanded_mask = cv2.dilate(mask, kernel)
+
+        # Apply mask to the image
+        masked = cv2.bitwise_and(img, img, mask=expanded_mask)
+
+        # Create white background
+        white_bg = np.ones_like(img, dtype=np.uint8) * 255
+
+        # Invert expanded mask to get outside region
+        inverted_mask = cv2.bitwise_not(expanded_mask)
+
+        # Combine masked region + white background
+        result = cv2.bitwise_or(masked, cv2.bitwise_and(white_bg, white_bg, mask=inverted_mask))
+
+        # Find new bounding rect
+        x, y, w, h = cv2.boundingRect(expanded_mask)
+
+        # Crop
+        cropped = result[y:y + h, x:x + w]
+
+        height, width = cropped.shape[:2]
+
+        if height < 384 or width < 384:
+            cropped = cv2.resize(cropped, None, fx=2, fy=2, interpolation=cv2.INTER_LANCZOS4)
+        return cropped
+
+    @staticmethod
+    def sort_polys(polys):
+        # Sort by the **topmost point** first, then leftmost
+        def get_top_left_point(poly):
+            # poly = list of (x, y)
+            topmost = min(poly, key=lambda p: (p[1], p[0]))  # first by y, then by x
+            return topmost
+
+        # Get top-left for each poly
+        poly_top_lefts = [(poly, get_top_left_point(poly)) for poly in polys]
+
+        # Sort first by Y (top to bottom), then by X (left to right)
+        poly_top_lefts.sort(key=lambda x: (x[1][1], x[1][0]))
+
+        # Return sorted polys
+        sorted_polys = [ptl[0] for ptl in poly_top_lefts]
+        return sorted_polys
 
     def crop(self, image, config=None):
-        temp_file = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-        temp_path = temp_file.name
-        cv2.imwrite(temp_path, image)
-        temp_file.close()
 
-        try:
-            result = self.craft.detect_text(temp_path)
-            boxes = sorted(result["boxes"], key=lambda box: box[0][1])
+        # Convert OpenCV image (BGR) to PIL (RGB)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-            segments = []
-            for box in boxes:
-                x1, y1 = int(box[0][0]), int(box[0][1])
-                x2, y2 = int(box[2][0]), int(box[2][1])
-                cropped = image[y1:y2, x1:x2]
-                if cropped.shape[0] > 10 and cropped.shape[1] > 10:
-                    segments.append(cropped)
+        # Run OCR
+        result = self.ocr.ocr(image, cls=True)
+        boxes = [line[0] for line in result[0]]
 
-            return segments
+        boxes = self.sort_polys(boxes)
+        segments = []
 
-        finally:
-            os.remove(temp_path)
+        for idx, box in enumerate(boxes):
+            cropped_img = self.crop_poly(image, box)
+            #plt.imshow(cropped_img)
+            #plt.show()
+            if cropped_img.shape[0] > 10 and cropped_img.shape[1] > 10:
+                segments.append(cropped_img)
+
+        return segments
 
     def unload(self):
-        self.craft.unload_craftnet_model()
-        self.craft.unload_refinenet_model()
-        torch.cuda.empty_cache()
+        # PaddleOCR doesn’t need unloads like CRAFT did,
+        # but we can still clear GPU memory if used.
+        import paddle
+        if paddle.device.get_device() != 'cpu':
+            paddle.device.cuda.empty_cache()
 
 
 def get_segmenter(mode, page_type):
