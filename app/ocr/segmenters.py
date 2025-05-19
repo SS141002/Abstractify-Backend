@@ -55,20 +55,18 @@ class ManualRuledSegmenter(Segmenter):
         return segments
 
 
-class AutoPlainSegmenter(Segmenter):
+class AutoSegmenter(Segmenter):
     def __init__(self):
         self.ocr = PaddleOCR(use_angle_cls=True, lang='en',
                              det=True, rec=False,
                              det_db_box_thresh=0.2,
                              det_db_unclip_ratio=3.5,
                              det_box_type='poly',
-                             use_gpu=True,
                              use_dilation=True,
-                             det_db_score_mode='slow'
-                             )
+                             det_db_score_mode='slow')
 
     @staticmethod
-    def crop_poly(img, box, expand_pixels=0):
+    def crop_poly(img, box, expand_pixels):
         # Create an empty black mask
         mask = np.zeros(img.shape[:2], dtype=np.uint8)
 
@@ -132,11 +130,13 @@ class AutoPlainSegmenter(Segmenter):
         result = self.ocr.ocr(image, cls=True)
         boxes = [line[0] for line in result[0]]
 
+
+
         boxes = self.sort_polys(boxes)
         segments = []
 
         for idx, box in enumerate(boxes):
-            cropped_img = self.crop_poly(image, box)
+            cropped_img = self.crop_poly(image, box,expand_pixels=3)
             #plt.imshow(cropped_img)
             #plt.show()
             if cropped_img.shape[0] > 10 and cropped_img.shape[1] > 10:
@@ -157,7 +157,7 @@ def get_segmenter(mode, page_type):
         return ManualPlainSegmenter()
     elif mode == "manual" and page_type == "ruled":
         return ManualRuledSegmenter()
-    elif mode == "automatic" and page_type == "plain":
-        return AutoPlainSegmenter()
+    elif mode == "automatic":
+        return AutoSegmenter()
     else:
         raise ValueError("Unsupported mode/page_type combo")

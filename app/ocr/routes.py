@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request, abort
 from app.socketio_instance import socketio
-from .models import trocr_processor, trocr_model, device
+from .models import device, get_trocr_model, unload_trocr_model
 from .segmenters import get_segmenter
 from app.utils.image_processing import read_image
 import easyocr
@@ -71,6 +71,7 @@ def handle_ocr():
                 'maxWhite': parse_int_field('maxWhite', 255)
             }
             segmenter = get_segmenter(segment_mode, page_type)
+            trocr_processor, trocr_model = get_trocr_model()
             results = {}
             fname = ""
             for file in files:
@@ -79,7 +80,7 @@ def handle_ocr():
                 image = read_image(file)
                 full_text = ""
                 try:
-                    segments = segmenter.crop(image, config)
+                    segments = segmenter.crop(image)
                     socketio.emit("ocr_progress",
                                   {"current_file": None, "status": f"segmenting image {current_file}/{total_files}",
                                    "progress": int((current_file / total_files) * 100)})
@@ -98,7 +99,7 @@ def handle_ocr():
                 except Exception as e:
                     print(f"Error processing segment: {e}")
                     results[filename] = "Unable to Process the image"
-
+            unload_trocr_model()
             return jsonify(results), 200
         except Exception as e:
             print(e)

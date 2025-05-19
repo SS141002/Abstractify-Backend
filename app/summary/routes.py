@@ -60,15 +60,13 @@ def handle_summary():
     # Priority: If a file is provided, use it; otherwise, use JSON text.
     if 'file' in request.files and request.files['file'].filename:
         file_obj = request.files['file']
-        # Sanitize the file name using secure_filename
         filename = secure_filename(file_obj.filename)
         long_text = extract_text(file_obj, filename)
         try:
             minlength = int(request.form.get('min', ''))
             maxlength = int(request.form.get('max', ''))
         except Exception:
-            abort(400,
-                  description='Minimum and Maximum length parameters must be provided and valid when uploading a file')
+            abort(400, description='Minimum and Maximum length parameters must be provided and valid when uploading a file')
     else:
         data = request.get_json()
         if not data:
@@ -87,6 +85,9 @@ def handle_summary():
         abort(400, description="No text content extracted from the input")
 
     try:
+        # Lazy load the BART model
+        tokenizer, model = get_bart_model()
+
         inputs = tokenizer(long_text, max_length=1024, return_tensors="pt", truncation=True)
         inputs = {key: value.to(device) for key, value in inputs.items()}
 
@@ -99,6 +100,7 @@ def handle_summary():
             early_stopping=True
         )
         summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+        unload_bart_model()
         return jsonify({'summary': summary_text})
     except Exception as e:
         abort(500, description=f"Summarization error: {str(e)}")

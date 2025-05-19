@@ -14,11 +14,17 @@ def handle_grammar():
     long_text = data['text']
 
     try:
+        # Load the model when needed
+        gram_tokenizer, gram_model = get_grammar_model()
+
         input_text = "Fix grammatical errors in this text: " + long_text
         input_ids = gram_tokenizer(input_text, return_tensors="pt").input_ids.to(device)
         output = gram_model.generate(input_ids, max_length=1024)
         result = gram_tokenizer.decode(output[0], skip_special_tokens=True)
+
+        unload_grammar_model()
         return jsonify({'text': result})
+
     except Exception as e:
         print(e)
         abort(500, description=str(e))
